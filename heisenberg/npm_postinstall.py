@@ -1,6 +1,8 @@
 # heisenberg/npm_postinstall.py
 
-import io, json, tarfile, urllib.parse, requests
+import io, json, tarfile, urllib.parse
+from . import safe_http as requests
+
 
 def fetch_npm_tarball_bytes(name: str, version: str, timeout=(15, 30)) -> bytes:
     """Fetch npm tarball bytes for name@version using the registry dist.tarball URL."""
@@ -12,6 +14,7 @@ def fetch_npm_tarball_bytes(name: str, version: str, timeout=(15, 30)) -> bytes:
     r = requests.get(tarball_url, timeout=timeout[1])
     r.raise_for_status()
     return r.content
+
 
 def extract_package_json_from_tarball(tar_bytes: bytes) -> dict | None:
     """Return parsed package.json (dict) from npm tarball; handles package/package.json."""
@@ -30,6 +33,7 @@ def extract_package_json_from_tarball(tar_bytes: bytes) -> dict | None:
                     return None
     return None
 
+
 def detect_postinstall_scripts(pkg_json: dict) -> dict:
     """
     Return lifecycle info:
@@ -44,6 +48,7 @@ def detect_postinstall_scripts(pkg_json: dict) -> dict:
         "postinstall_cmd": scripts.get("postinstall", ""),
     }
 
+
 def check_npm_postinstall(name: str, version: str) -> dict:
     """
     High-level check used by Heisenberg:
@@ -56,5 +61,7 @@ def check_npm_postinstall(name: str, version: str) -> dict:
     blob = fetch_npm_tarball_bytes(name, version)
     pkg_json = extract_package_json_from_tarball(blob)
     if not pkg_json:
-        return {"has_postinstall": False, "lifecycle": [], "postinstall_cmd": ""}
+        raise ValueError(
+            "Package metadata missing or unreadable; lifecycle status unknown"
+        )
     return detect_postinstall_scripts(pkg_json)
