@@ -15,7 +15,7 @@ from .config import Settings
 from .sbom_utils import (
     write_repos_file, load_repos_from_file,
     run_github_sbom_script, iter_selected_sboms,
-    cleanup_sbom_dir
+    sbom_workspace
 )
 
 
@@ -227,11 +227,12 @@ def run_bulk(sbom_dir, selected_repos, output_csv):
 def run_bulk_for_repos(repos, sbom_dir=None, output_csv=None, org=DEFAULT_ORG):  
     sbom_dir = sbom_dir or SBOM_DIR  
     output_csv = output_csv or OUTPUT_CSV  
-    write_repos_file(sbom_dir, repos, REPOS_FILE_NAME)  
-    if not run_github_sbom_script(sbom_dir, org, REPOS_FILE_NAME):  
-        print("[WARN] SBOM generation failed; aborting.")  
-        return
-    run_bulk(sbom_dir, repos, output_csv) 
+    with sbom_workspace(sbom_dir) as work:
+        write_repos_file(work, repos, REPOS_FILE_NAME)  
+        if not run_github_sbom_script(work, org, REPOS_FILE_NAME):  
+            print("[WARN] SBOM generation failed; aborting.")  
+            return
+        run_bulk(work, repos, output_csv) 
 
 
 def main(args=None):
@@ -247,18 +248,15 @@ def main(args=None):
         print("[ERROR] No repositories selected.")
         return
 
-    write_repos_file(args.sbom_dir, selected_repos, REPOS_FILE_NAME)
-    
-    if not run_github_sbom_script(args.sbom_dir, args.org, REPOS_FILE_NAME): 
-        print("[WARN] SBOM generation failed; aborting.")
-        cleanup_sbom_dir(args.sbom_dir)
-        return
+    with sbom_workspace(args.sbom_dir) as work:
+        write_repos_file(work, selected_repos, REPOS_FILE_NAME)
 
-    try:
-        run_bulk(args.sbom_dir, selected_repos, args.output)
+        if not run_github_sbom_script(work, args.org, REPOS_FILE_NAME): 
+            print("[WARN] SBOM generation failed; aborting.")
+            return
+
+        run_bulk(work, selected_repos, args.output)
         print(f"[INFO] Done. Results saved to {args.output}")
-    finally:
-        cleanup_sbom_dir(args.sbom_dir)
 
 def cli(args=None):
     return main(args)

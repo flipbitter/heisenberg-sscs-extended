@@ -1,6 +1,9 @@
 import argparse
 import csv
 import io
+import os
+import stat
+from pathlib import Path
 
 import pytest
 
@@ -27,13 +30,51 @@ def test_iter_selected_sboms_skips_missing(tmp_path, capsys):
     assert "SBOM not found for repo 'b'" in capsys.readouterr().out
 
 
-def test_cleanup_sbom_dir(tmp_path):
-    d = tmp_path / "sbom"
-    d.mkdir()
-    (d / "x").write_text("1")
-    su.cleanup_sbom_dir(str(d))
-    assert not d.exists()
-    su.cleanup_sbom_dir(str(d))  # no error when already gone
+def test_sbom_workspace_never_deletes_preexisting_dir(tmp_path):
+    base = tmp_path / "mine"
+    base.mkdir()
+    (base / "keep.txt").write_text("user data")
+    with su.sbom_workspace(str(base)) as work:
+        assert os.path.dirname(work) == str(base)
+        (Path(work) / "svc_sbom.csv").write_text("package\n")
+    assert (base / "keep.txt").read_text() == "user data"
+    assert sorted(p.name for p in base.iterdir()) == ["keep.txt"]
+
+
+def test_sbom_workspace_current_directory_is_safe(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "keep.txt").write_text("x")
+    with su.sbom_workspace("."):
+        pass
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["keep.txt"]
+
+
+def test_sbom_workspace_removes_only_what_it_created(tmp_path):
+    base = tmp_path / "sbom"
+    with su.sbom_workspace(str(base)) as work:
+        assert Path(work).is_dir()
+        assert stat.S_IMODE(os.stat(work).st_mode) == 0o700
+    assert not base.exists()
+
+
+def test_sbom_workspace_runs_are_isolated_and_fresh(tmp_path):
+    base = tmp_path / "sbom"
+    with su.sbom_workspace(str(base)) as a, su.sbom_workspace(str(base)) as b:
+        assert a != b
+        (Path(a) / "svc_sbom.csv").write_text("stale\n")
+        assert not (Path(b) / "svc_sbom.csv").exists()
+    with su.sbom_workspace(str(base)) as c:
+        assert list(Path(c).iterdir()) == []
+
+
+def test_sbom_workspace_cleans_up_on_error(tmp_path):
+    base = tmp_path / "mine"
+    base.mkdir()
+    with pytest.raises(RuntimeError):
+        with su.sbom_workspace(str(base)) as work:
+            (Path(work) / "x").write_text("1")
+            raise RuntimeError("boom")
+    assert base.exists() and list(base.iterdir()) == []
 
 
 def test_run_github_sbom_script_uses_argv_list_not_shell(monkeypatch, tmp_path):

@@ -4,6 +4,8 @@ import os
 import sys
 import subprocess
 import shutil
+import tempfile
+from contextlib import contextmanager
 
 def ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
@@ -49,10 +51,29 @@ def iter_selected_sboms(sbom_dir: str, selected_repos: list[str]):
         else:
             print(f"[WARN] SBOM not found for repo '{repo}': {path}")
 
-def cleanup_sbom_dir(path):
+@contextmanager
+def sbom_workspace(base_dir: str):
+    """Yield a fresh, private, per-run directory inside ``base_dir``.
+
+    Only what this run created is deleted afterwards: the per-run directory,
+    and ``base_dir`` itself only if this run created it and it is now empty.
+    A pre-existing ``base_dir`` (e.g. ``--sbom-dir .``) and anything else in it
+    are never touched. A fresh directory per run also means concurrent runs
+    cannot clobber each other and no stale SBOM from an earlier run is reused.
+    """
+    base_dir = os.path.abspath(base_dir)
+    created_base = not os.path.exists(base_dir)
+    os.makedirs(base_dir, exist_ok=True)
+    work = tempfile.mkdtemp(prefix="heis-sbom-", dir=base_dir)  # mode 0700
     try:
-        if os.path.isdir(path):
-            shutil.rmtree(path)
-            print(f"[INFO] Cleaned up SBOM directory: {path}")
-    except Exception as e:
-        print(f"[WARN] Failed to remove SBOM directory {path}: {e}") 
+        yield work
+    finally:
+        try:
+            shutil.rmtree(work)
+        except OSError as e:
+            print(f"[WARN] Failed to remove SBOM run directory {work}: {e}")
+        if created_base:
+            try:
+                os.rmdir(base_dir)  # only succeeds if empty
+            except OSError:
+                pass

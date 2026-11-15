@@ -1,5 +1,7 @@
 import argparse
 import csv
+import os
+from pathlib import Path
 
 import pytest
 
@@ -57,8 +59,9 @@ def test_main_repo_mode_adds_repo_column_and_cleans_up(monkeypatch, tmp_path, fi
 
     def fake_generate(d, org, repos_file):
         assert org == "my-org"
+        assert os.path.dirname(d) == str(sbom_dir), "SBOMs go in a per-run subdirectory"
         for repo in ("svc-a", "svc-b"):
-            (sbom_dir / f"{repo}_sbom.csv").write_text((fixtures_dir / "sbom.csv").read_text())
+            (Path(d) / f"{repo}_sbom.csv").write_text((fixtures_dir / "sbom.csv").read_text())
         return True
 
     monkeypatch.setattr(ca, "run_github_sbom_script", fake_generate)
@@ -78,3 +81,23 @@ def test_main_repo_mode_adds_repo_column_and_cleans_up(monkeypatch, tmp_path, fi
 def test_main_repo_mode_generation_failure(monkeypatch, tmp_path):
     monkeypatch.setattr(ca, "run_github_sbom_script", lambda *a: False)
     assert ca.main(_args(repos="svc", pkg="x", sbom_dir=str(tmp_path / "s"))) == 1
+    assert not (tmp_path / "s").exists(), "nothing may be left behind after a failed run"
+
+
+def test_main_repo_mode_keeps_preexisting_sbom_dir(monkeypatch, tmp_path, fixtures_dir):
+    """Regression: --sbom-dir pointing at an existing directory must never be deleted."""
+    mine = tmp_path / "mine"
+    mine.mkdir()
+    (mine / "important.txt").write_text("do not delete")
+    (mine / "svc_sbom.csv").write_text("package,version,language,license\nleft-pad,0.0.1,npm,MIT\n")
+
+    def fake_generate(d, org, repos_file):
+        return True  # generation "succeeds" but writes nothing for svc
+
+    monkeypatch.setattr(ca, "run_github_sbom_script", fake_generate)
+    out = tmp_path / "out.csv"
+    assert ca.main(_args(repos="svc", pkg="left-pad", output=str(out), sbom_dir=str(mine))) == 0
+    assert (mine / "important.txt").read_text() == "do not delete"
+    assert sorted(p.name for p in mine.iterdir()) == ["important.txt", "svc_sbom.csv"]
+    # the stale svc_sbom.csv in the user's directory must not be analysed
+    assert "left-pad" not in out.read_text()
