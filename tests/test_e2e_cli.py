@@ -10,6 +10,7 @@ import contextlib
 import csv
 import io
 import json
+import os
 import re
 import subprocess
 import sys
@@ -126,8 +127,9 @@ def test_bulk_command_full_pipeline(monkeypatch, inprocess_checker, fixtures_dir
 
     def fake_generate(d, org, repos_file):
         assert org == "my-org"
-        assert (sbom_dir / repos_file).read_text() == "svc\n"
-        (sbom_dir / "svc_sbom.csv").write_text((fixtures_dir / "sbom.csv").read_text())
+        assert os.path.dirname(d) == str(sbom_dir), "SBOMs go in a per-run subdirectory"
+        assert (Path(d) / repos_file).read_text() == "svc\n"
+        (Path(d) / "svc_sbom.csv").write_text((fixtures_dir / "sbom.csv").read_text())
         return True
 
     monkeypatch.setattr(bulk_check, "run_github_sbom_script", fake_generate)
@@ -138,6 +140,22 @@ def test_bulk_command_full_pipeline(monkeypatch, inprocess_checker, fixtures_dir
         ["requests", "left-pad", "Left-Pad", "serde", "github.com/pkg/errors"])
     assert {r["language"] for r in rows} == {"pypi", "npm", "cargo", "go"}
     assert not sbom_dir.exists(), "temporary SBOM dir must be removed after bulk"
+
+
+def test_bulk_keeps_preexisting_sbom_dir(monkeypatch, inprocess_checker, fixtures_dir, tmp_path):
+    """Regression: `bulk --sbom-dir <existing dir>` used to rmtree the whole directory."""
+    mine = tmp_path / "mine"
+    mine.mkdir()
+    (mine / "important.txt").write_text("do not delete")
+
+    def fake_generate(d, org, repos_file):
+        (Path(d) / "svc_sbom.csv").write_text((fixtures_dir / "sbom.csv").read_text())
+        return True
+
+    monkeypatch.setattr(bulk_check, "run_github_sbom_script", fake_generate)
+    run_cli(monkeypatch, "bulk", "-r", "svc", "--org", "my-org", "--sbom-dir", str(mine),
+            "-o", str(tmp_path / "bulk.csv"))
+    assert sorted(p.name for p in mine.iterdir()) == ["important.txt"]
 
 
 def test_sbom_command(monkeypatch, fake_http, tmp_path):

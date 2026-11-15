@@ -12,7 +12,7 @@ DEFAULT_OUTPUT = getattr(_settings, "output_csv", "analyze_matches.csv")
 from .sbom_utils import (
     write_repos_file, load_repos_from_file,
     run_github_sbom_script, iter_selected_sboms,
-    cleanup_sbom_dir
+    sbom_workspace
 )
 
 def _read_list_file(path):
@@ -166,32 +166,31 @@ def main(args=None):
         print("[ERROR] No repositories selected.")
         return 2
     
-    write_repos_file(args.sbom_dir, selected_repos, _settings.repos_file_name)
-    if not run_github_sbom_script(args.sbom_dir, args.org, _settings.repos_file_name):
-        print("[WARN] SBOM generation failed; aborting.")
-        return 1
+    with sbom_workspace(args.sbom_dir) as work:
+        write_repos_file(work, selected_repos, _settings.repos_file_name)
+        if not run_github_sbom_script(work, args.org, _settings.repos_file_name):
+            print("[WARN] SBOM generation failed; aborting.")
+            return 1
 
-    try:
-        if args.output == "-":
-            out_writer = csv.writer(sys.stdout)
-            wrote_header = [False]
-            for repo_name, sbom_path in iter_selected_sboms(args.sbom_dir, selected_repos):
-                print(f"[INFO] Analyzing {sbom_path} (repo: {repo_name})", file=sys.stderr)  
-                _analyze_single(sbom_path, targets, args.case_sensitive, out_writer, wrote_header, repo_name=repo_name)
-            print("[INFO] Wrote matches to stdout", file=sys.stderr)
-        else:
-            with open(args.output, "w", encoding="utf-8", newline="") as f:
-                out_writer = csv.writer(f)
+        try:
+            if args.output == "-":
+                out_writer = csv.writer(sys.stdout)
                 wrote_header = [False]
-                for repo_name, sbom_path in iter_selected_sboms(args.sbom_dir, selected_repos):
-                    print(f"[INFO] Analyzing {sbom_path} (repo: {repo_name})")
+                for repo_name, sbom_path in iter_selected_sboms(work, selected_repos):
+                    print(f"[INFO] Analyzing {sbom_path} (repo: {repo_name})", file=sys.stderr)  
                     _analyze_single(sbom_path, targets, args.case_sensitive, out_writer, wrote_header, repo_name=repo_name)
-            print(f"[INFO] Done. Results saved to {args.output}")
-    except Exception as e:
-        print(f"[ERROR] Failed to write output: {e}")
-        return 1
-    finally:
-        cleanup_sbom_dir(args.sbom_dir)
+                print("[INFO] Wrote matches to stdout", file=sys.stderr)
+            else:
+                with open(args.output, "w", encoding="utf-8", newline="") as f:
+                    out_writer = csv.writer(f)
+                    wrote_header = [False]
+                    for repo_name, sbom_path in iter_selected_sboms(work, selected_repos):
+                        print(f"[INFO] Analyzing {sbom_path} (repo: {repo_name})")
+                        _analyze_single(sbom_path, targets, args.case_sensitive, out_writer, wrote_header, repo_name=repo_name)
+                print(f"[INFO] Done. Results saved to {args.output}")
+        except Exception as e:
+            print(f"[ERROR] Failed to write output: {e}")
+            return 1
     
     return 0
 
