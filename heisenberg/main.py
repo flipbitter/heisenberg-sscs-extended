@@ -1,7 +1,14 @@
 # heisenberg/main.py
 
 import argparse
-from . import github_sbom, heisenberg_depsdev, bulk_check, compromise_analysis, vendor, actions_bulk 
+from . import (
+    github_sbom,
+    heisenberg_depsdev,
+    bulk_check,
+    compromise_analysis,
+    vendor,
+    actions_bulk,
+)
 
 
 def cli():
@@ -20,15 +27,18 @@ def cli():
     vendor_parser = sub.add_parser("vendor", help="Assess vendor/third-party SBOM")
     vendor.add_arguments(vendor_parser)
 
-    analyze_parser = sub.add_parser("analyze", help="Find and return compromised packages in an SBOM")
+    analyze_parser = sub.add_parser(
+        "analyze", help="Find and return compromised packages in an SBOM"
+    )
     compromise_analysis.add_arguments(analyze_parser)
 
-    actions_parser = sub.add_parser("actions", help="Check GitHub Actions supply chain health")
-    actions_bulk.add_arguments(actions_parser)       
+    actions_parser = sub.add_parser(
+        "actions", help="Check GitHub Actions supply chain health"
+    )
+    actions_bulk.add_arguments(actions_parser)
 
     args = p.parse_args()
 
-    
     if args.cmd == "sbom":
         github_sbom.cli(args)
     elif args.cmd == "check":
@@ -41,6 +51,7 @@ def cli():
         compromise_analysis.cli(args)
     elif args.cmd == "actions":
         actions_bulk.cli(args)
+
 
 if __name__ == "__main__":
     cli()

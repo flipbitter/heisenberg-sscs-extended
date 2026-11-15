@@ -62,8 +62,12 @@ class FakeHTTP:
 
 @pytest.fixture
 def fake_http(monkeypatch):
+    from heisenberg import safe_http
+
     fake = FakeHTTP()
     monkeypatch.setattr(requests, "get", fake.get)
+    # Collectors that moved to the hardened client call safe_http.get directly.
+    monkeypatch.setattr(safe_http, "get", fake.get)
     return fake
 
 

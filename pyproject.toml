@@ -16,6 +16,12 @@ dependencies = [
 [project.scripts]
 heisenberg = "heisenberg.main:cli"
 
+[project.optional-dependencies]
+mcp = [
+    "mcp==1.26.0",
+    "packaging>=24,<26",
+]
+
 [tool.setuptools.packages.find]
 include = ["heisenberg*"]    
 exclude = ["img*", "tests*", "docs*"]

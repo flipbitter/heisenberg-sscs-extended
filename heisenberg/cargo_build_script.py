@@ -1,6 +1,8 @@
-#heisenberg/cargo_build_script.py
+# heisenberg/cargo_build_script.py
 
-import io, tarfile, tomllib, requests
+import io, tarfile, tomllib
+from . import safe_http as requests
+
 
 def fetch_crate_tarball_bytes(name: str, version: str, timeout=(15, 30)) -> bytes:
     url = f"https://crates.io/api/v1/crates/{name}/{version}/download"
